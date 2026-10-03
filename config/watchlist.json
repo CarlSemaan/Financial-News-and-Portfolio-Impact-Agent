@@ -1,0 +1,25 @@
+{
+  "companies": [
+    {
+      "ticker": "AAPL",
+      "name": "Apple Inc.",
+      "query_terms": ["Apple", "AAPL"],
+      "official_domains": ["apple.com"],
+      "cik": "0000320193"
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft Corporation",
+      "query_terms": ["Microsoft", "MSFT"],
+      "official_domains": ["microsoft.com"],
+      "cik": "0000789019"
+    },
+    {
+      "ticker": "TSLA",
+      "name": "Tesla, Inc.",
+      "query_terms": ["Tesla", "TSLA"],
+      "official_domains": ["tesla.com"],
+      "cik": "0001318605"
+    }
+  ]
+}

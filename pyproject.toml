@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "financial-news-portfolio-impact-agent"
+version = "1.0.0"
+description = "A safeguarded multi-agent system for monitoring financial news and explaining portfolio relevance."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Carl Semaan" }]
+dependencies = [
+  "mcp>=1.12,<2",
+]
+
+[project.scripts]
+financial-news-agent = "financial_news_agent.cli:main"
+financial-news-mcp = "financial_news_agent.mcp_server:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+financial_news_agent = ["resources/*.json"]
