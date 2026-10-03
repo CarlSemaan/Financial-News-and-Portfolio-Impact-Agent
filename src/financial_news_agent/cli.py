@@ -15,7 +15,7 @@ from .runtime import build_supervisor
 from .tools import InProcessToolGateway, ToolService
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path.cwd().resolve()
 
 
 def _print_report(payload: dict[str, Any], *, demo: bool) -> None:
@@ -103,17 +103,23 @@ def main() -> int:
         print(f"\nEvaluation record: {output}")
         return 0
     if args.command == "list-alerts":
-        settings = Settings.from_env(project_root=PROJECT_ROOT)
+        settings = Settings.from_env(
+            project_root=PROJECT_ROOT, mode="demo", use_ollama=False
+        )
         print(json.dumps(ToolService(settings).memory.list_alerts(), indent=2))
         return 0
 
     mode = "demo" if args.command == "demo" else "live"
     use_ollama = args.with_ollama if mode == "demo" else not args.no_llm
-    settings = Settings.from_env(
-        project_root=PROJECT_ROOT,
-        mode=mode,
-        use_ollama=use_ollama,
-    )
+    try:
+        settings = Settings.from_env(
+            project_root=PROJECT_ROOT,
+            mode=mode,
+            use_ollama=use_ollama,
+        )
+    except ValueError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
     return asyncio.run(_execute(args, settings))
 
 

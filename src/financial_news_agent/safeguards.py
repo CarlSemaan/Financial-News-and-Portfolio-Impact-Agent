@@ -14,7 +14,9 @@ INJECTION_PATTERNS = (
 )
 
 PROHIBITED_ADVICE_PATTERNS = (
-    r"\b(buy|sell|short)\s+(the\s+)?(stock|shares|[A-Z]{1,5})\b",
+    r"(?:^|[.!?]\s*)(?:you\s+should\s+|investors?\s+should\s+|we\s+recommend\s+|consider\s+)?"
+    r"(buy|sell|short)\s+(the\s+)?(stock|shares|[A-Z]{1,5})\b",
+    r"\b(recommend|should|must|time\s+to)\s+(buy|sell|short)\b",
     r"\bprice target\b",
     r"\bguaranteed (return|profit|gain)\b",
     r"\bwill (rise|fall|surge|crash)\b",
@@ -55,3 +57,9 @@ def validate_output_text(text: str) -> None:
         raise ValueError("Output safeguard rejected investment advice or a price prediction")
     if contains_prompt_injection(text):
         raise ValueError("Output safeguard rejected instruction-like content copied from a source")
+
+
+def validate_source_text(text: str) -> None:
+    """Reject unsanitized instruction-like source text without treating factual trades as advice."""
+    if contains_prompt_injection(text):
+        raise ValueError("Source safeguard rejected instruction-like content")

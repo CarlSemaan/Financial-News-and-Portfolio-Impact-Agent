@@ -127,6 +127,11 @@ class VerifiedAssessment:
     impact_explanation: str
     uncertainty: str
     supporting_evidence_ids: tuple[str, ...]
+    fresh: bool
+    relevant: bool
+    has_official_source: bool
+    credible_source_count: int
+    impact_analysis_performed: bool
     suppression_reason: str | None = None
     safeguards_triggered: tuple[str, ...] = ()
 
@@ -150,6 +155,23 @@ class Alert:
     significance_score: int
     sources: tuple[SourceEvidence, ...]
     created_at: datetime = field(default_factory=utc_now)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Alert":
+        return cls(
+            event_key=str(data["event_key"]),
+            ticker=str(data["ticker"]).strip().upper(),
+            company_name=str(data["company_name"]).strip(),
+            headline=str(data["headline"]).strip(),
+            event_date=parse_datetime(data["event_date"]),
+            facts=str(data["facts"]).strip(),
+            impact=str(data["impact"]).strip(),
+            uncertainty=str(data["uncertainty"]).strip(),
+            confidence=str(data["confidence"]).strip().lower(),
+            significance_score=int(data["significance_score"]),
+            sources=tuple(SourceEvidence.from_dict(item) for item in data["sources"]),
+            created_at=parse_datetime(data["created_at"]),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -176,10 +198,16 @@ class Decision:
     outcome: Literal["alerted", "suppressed"]
     reason: str
     significance_score: int
+    candidate: CandidateEvent
+    gate_results: dict[str, bool | None]
+    safeguards_triggered: tuple[str, ...] = ()
     alert: Alert | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        data["candidate"] = self.candidate.to_dict()
+        data["gate_results"] = dict(self.gate_results)
+        data["safeguards_triggered"] = list(self.safeguards_triggered)
         data["alert"] = self.alert.to_dict() if self.alert else None
         return data
 

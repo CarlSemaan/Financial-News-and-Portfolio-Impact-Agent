@@ -40,11 +40,17 @@ class SupervisorAgent:
                         until,
                         query_hint="earnings filing investigation acquisition outage",
                     )
-                for candidate in candidates:
+            except Exception as exc:
+                errors.append(f"{company.ticker} retrieval: {type(exc).__name__}: {exc}")
+                return decisions, errors
+            for candidate in candidates:
+                try:
                     assessment = await self.verification_agent.run(candidate, company, since)
                     decisions.append(await self.alert_agent.run(assessment))
-            except Exception as exc:
-                errors.append(f"{company.ticker}: {type(exc).__name__}: {exc}")
+                except Exception as exc:
+                    errors.append(
+                        f"{company.ticker} {candidate.event_group}: {type(exc).__name__}: {exc}"
+                    )
         return decisions, errors
 
     async def run(

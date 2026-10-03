@@ -127,30 +127,6 @@ class VerificationImpactAgent:
         if any(item.injection_flag for item in candidate.evidence):
             safeguards.append("prompt_injection_removed")
 
-        payload = {
-            "ticker": candidate.ticker,
-            "company": candidate.company_name,
-            "event_type": candidate.event_type,
-            "headline": candidate.headline,
-            "factual_summary": candidate.factual_summary,
-            "evidence": [
-                {
-                    "evidence_id": item.evidence_id,
-                    "source_name": item.source_name,
-                    "source_type": item.source_type,
-                    "title": item.title,
-                    "summary": item.summary,
-                }
-                for item in usable_evidence
-            ],
-        }
-        try:
-            draft = await asyncio.to_thread(self.impact_model.analyze, payload)
-            validate_output_text(" ".join([draft.impact_explanation, draft.uncertainty]))
-        except Exception:
-            draft = self.fallback_model.analyze(payload)
-            safeguards.append("model_output_replaced_with_safe_fallback")
-
         reason = None
         if not fresh:
             reason = "event is outside the requested time window"
@@ -160,6 +136,32 @@ class VerificationImpactAgent:
             reason = "material claim lacks an official source or two credible independent sources"
         elif not significant:
             reason = f"significance score {score} is below threshold {self.significance_threshold}"
+
+        draft = None
+        if reason is None:
+            payload = {
+                "ticker": candidate.ticker,
+                "company": candidate.company_name,
+                "event_type": candidate.event_type,
+                "headline": candidate.headline,
+                "factual_summary": candidate.factual_summary,
+                "evidence": [
+                    {
+                        "evidence_id": item.evidence_id,
+                        "source_name": item.source_name,
+                        "source_type": item.source_type,
+                        "title": item.title,
+                        "summary": item.summary,
+                    }
+                    for item in usable_evidence
+                ],
+            }
+            try:
+                draft = await asyncio.to_thread(self.impact_model.analyze, payload)
+                validate_output_text(" ".join([draft.impact_explanation, draft.uncertainty]))
+            except Exception:
+                draft = self.fallback_model.analyze(payload)
+                safeguards.append("model_output_replaced_with_safe_fallback")
 
         return VerifiedAssessment(
             event_key=stable_event_key(candidate),
@@ -172,10 +174,15 @@ class VerificationImpactAgent:
                 evidence_count=len(usable_evidence),
                 has_official=has_official,
             ),
-            affected_drivers=draft.affected_drivers,
-            impact_explanation=draft.impact_explanation,
-            uncertainty=draft.uncertainty,
+            affected_drivers=draft.affected_drivers if draft else (),
+            impact_explanation=draft.impact_explanation if draft else "",
+            uncertainty=draft.uncertainty if draft else "",
             supporting_evidence_ids=evidence_ids(usable_evidence),
+            fresh=fresh,
+            relevant=relevant,
+            has_official_source=has_official,
+            credible_source_count=len(credible_sources),
+            impact_analysis_performed=draft is not None,
             suppression_reason=reason,
             safeguards_triggered=tuple(safeguards),
         )
@@ -187,6 +194,14 @@ class AlertMemoryAgent:
 
     async def run(self, assessment: VerifiedAssessment) -> Decision:
         candidate = assessment.candidate
+        gate_results: dict[str, bool | None] = {
+            "fresh": assessment.fresh,
+            "relevant": assessment.relevant,
+            "verified": assessment.verified,
+            "significant": assessment.significant,
+            "duplicate_check_passed": None,
+            "output_safeguard_passed": None,
+        }
         if assessment.suppression_reason:
             return Decision(
                 ticker=candidate.ticker,
@@ -195,6 +210,9 @@ class AlertMemoryAgent:
                 outcome="suppressed",
                 reason=assessment.suppression_reason,
                 significance_score=assessment.significance_score,
+                candidate=candidate,
+                gate_results=gate_results,
+                safeguards_triggered=assessment.safeguards_triggered,
             )
 
         duplicate = await self.tools.check_alert_memory(
@@ -204,7 +222,27 @@ class AlertMemoryAgent:
             candidate.headline,
             candidate.event_date.isoformat(),
         )
+        if duplicate.get("pending_delivery"):
+            pending_payload = duplicate.get("pending_alert")
+            if not isinstance(pending_payload, dict):
+                raise ValueError("Pending alert record is missing its stored payload")
+            await self.tools.notify_alert(pending_payload)
+            gate_results["duplicate_check_passed"] = True
+            gate_results["output_safeguard_passed"] = True
+            return Decision(
+                ticker=candidate.ticker,
+                event_group=candidate.event_group,
+                event_key=str(pending_payload["event_key"]),
+                outcome="alerted",
+                reason="previously saved alert delivered after an earlier notification failure",
+                significance_score=int(pending_payload["significance_score"]),
+                candidate=candidate,
+                gate_results=gate_results,
+                safeguards_triggered=assessment.safeguards_triggered + ("pending_delivery_retried",),
+                alert=Alert.from_dict(pending_payload),
+            )
         if duplicate["duplicate"]:
+            gate_results["duplicate_check_passed"] = False
             return Decision(
                 ticker=candidate.ticker,
                 event_group=candidate.event_group,
@@ -212,6 +250,9 @@ class AlertMemoryAgent:
                 outcome="suppressed",
                 reason=f"duplicate of {duplicate['matched_event_key']} ({duplicate['match_type']} match)",
                 significance_score=assessment.significance_score,
+                candidate=candidate,
+                gate_results=gate_results,
+                safeguards_triggered=assessment.safeguards_triggered,
             )
 
         allowed_ids = set(assessment.supporting_evidence_ids)
@@ -229,9 +270,11 @@ class AlertMemoryAgent:
             significance_score=assessment.significance_score,
             sources=sources,
         )
-        validate_output_text(" ".join([alert.headline, alert.facts, alert.impact, alert.uncertainty]))
+        validate_output_text(" ".join([alert.impact, alert.uncertainty]))
         await self.tools.save_alert(alert.to_dict(), candidate.event_type)
         await self.tools.notify_alert(alert.to_dict())
+        gate_results["duplicate_check_passed"] = True
+        gate_results["output_safeguard_passed"] = True
         return Decision(
             ticker=candidate.ticker,
             event_group=candidate.event_group,
@@ -239,5 +282,8 @@ class AlertMemoryAgent:
             outcome="alerted",
             reason="new, significant, and adequately supported event",
             significance_score=assessment.significance_score,
+            candidate=candidate,
+            gate_results=gate_results,
+            safeguards_triggered=assessment.safeguards_triggered,
             alert=alert,
         )

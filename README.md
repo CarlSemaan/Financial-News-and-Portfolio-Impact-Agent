@@ -25,8 +25,8 @@ Scheduled or CLI request | Supervisor Agent |
                          +--------+---------+
                                   |
                          +--------v---------+
-                         | Verification and|
-                         | Impact Agent    |----> deterministic score + optional Ollama
+                         | Verification and |
+                         | Impact Agent     |----> deterministic score + optional Ollama
                          +--------+---------+
                                   |
                          +--------v---------+
@@ -78,6 +78,15 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
+Windows Command Prompt uses a different activation command:
+
+```bat
+py -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
 macOS or Linux:
 
 ```bash
@@ -93,8 +102,8 @@ Pull the tested local model:
 ollama pull qwen2.5:7b
 ```
 
-Copy `.env.example` to `.env` if you want a reference file, then set the variables in your shell. The
-application reads environment variables directly; it does not load or commit secrets.
+Use `.env.example` as a reference, then set the variables in your shell. The application reads
+environment variables directly and deliberately does not load a local `.env` file or commit secrets.
 
 Windows PowerShell example:
 
@@ -142,19 +151,26 @@ Start Ollama in its normal local service mode, then run:
 financial-news-agent run --hours 72 --tool-mode mcp
 ```
 
+Live mode stops with a clear configuration error when `SEC_USER_AGENT` is absent or still contains
+an example address. This prevents unidentified requests to the SEC service.
+
 For a deterministic no-model fallback while testing live connectors:
 
 ```bash
 financial-news-agent run --hours 72 --no-llm
 ```
 
-Each run writes a structured audit record to `outputs/run-<uuid>.json`. Released alerts are persisted
-in `data/alerts.db`, and the notification channel appends them to `data/notifications.jsonl`. These
-runtime files are excluded from Git.
+Each run writes a structured audit record to `outputs/run-<uuid>.json`. Every decision retains the
+candidate evidence, gate results, safeguard flags, score, and release or suppression reason. Released
+alerts are persisted in `data/alerts.db`, and the notification channel appends them to
+`data/notifications.jsonl`. A saved alert whose first notification fails is retried on a later run;
+delivery is idempotent by event key. These runtime files are excluded from Git.
 
 The default watchlist is `config/watchlist.json`. Keep it small and include the ticker, legal company
-name, search terms, official domains, and zero-padded SEC CIK. A ticker not present in this file is
-rejected before any search or memory operation.
+name, search terms, and zero-padded SEC CIK. `official_domains` is retained as metadata for a future
+company investor-relations connector; the included official-source tool currently uses SEC filings.
+A ticker not present in the watchlist is rejected before any search, persistence, or notification
+operation. A packaged copy of the default watchlist also supports non-editable installations.
 
 ## MCP server
 
@@ -204,11 +220,14 @@ behavior; they do not estimate accuracy on the full distribution of live financi
 - News text is labeled and processed as untrusted data. Common prompt-injection phrases are removed
   before model use and flagged in the assessment trace.
 - An official source or two credible independent sources are required for a material claim.
-- A deterministic significance threshold controls publication; the language model cannot lower it.
+- Freshness, relevance, source verification, and significance gates run before model interpretation.
+  The language model cannot lower or bypass them.
 - Output validation blocks direct trading instructions, price targets, guaranteed returns, and
   deterministic price predictions. A safe template replaces invalid model output.
 - Stable event keys and headline similarity suppress repeated alerts.
 - Every released alert contains source records and an explicit uncertainty statement.
+- The persistence and notification tools repeat the publication checks at the MCP boundary, require
+  an approved ticker, and reject payloads that differ from the stored validated alert.
 - The only delivery action is a local file append. No brokerage or transaction capability exists.
 
 ## Data and privacy
@@ -224,7 +243,9 @@ Google News RSS can omit sources, delay records, or return links through an aggr
 cover only part of the information a company may publish. Source-name allowlists are imperfect, event
 grouping is lexical, and deterministic significance rules can miss novel events or overvalue familiar
 keywords. The local model can still generate a weak interpretation, although it cannot override the
-verification and publication controls. The system requires human review before any investment action.
+verification and publication controls. Configured official domains are not yet crawled, and the
+included evaluation is a small synthetic fixture rather than a measure of live-news accuracy. The
+system requires human review before any investment action.
 
 ## Project layout
 

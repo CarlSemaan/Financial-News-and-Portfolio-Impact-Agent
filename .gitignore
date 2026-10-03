@@ -4,6 +4,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/
+dist/
 .coverage
 .pytest_cache/
 .ruff_cache/
@@ -12,7 +14,5 @@ data/*.db-*
 data/*.jsonl
 outputs/*.json
 outputs/*.jsonl
-!data/.gitkeep
-!outputs/.gitkeep
 report/
 tools/build_report.py

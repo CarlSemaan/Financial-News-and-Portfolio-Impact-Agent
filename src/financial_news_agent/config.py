@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 
 from .models import Company
@@ -34,13 +35,34 @@ class Settings:
         selected_mode = (mode or os.getenv("NEWS_AGENT_MODE", "live")).lower()
         if selected_mode not in {"demo", "live"}:
             raise ValueError("NEWS_AGENT_MODE must be 'demo' or 'live'")
-        watchlist = Path(os.getenv("NEWS_AGENT_WATCHLIST", "config/watchlist.json"))
-        if not watchlist.is_absolute():
-            watchlist = root / watchlist
+        configured_watchlist = os.getenv("NEWS_AGENT_WATCHLIST")
+        if configured_watchlist:
+            watchlist = Path(configured_watchlist)
+            if not watchlist.is_absolute():
+                watchlist = root / watchlist
+        else:
+            repository_watchlist = root / "config" / "watchlist.json"
+            packaged_watchlist = resources.files("financial_news_agent").joinpath(
+                "resources/default_watchlist.json"
+            )
+            watchlist = repository_watchlist if repository_watchlist.exists() else Path(
+                str(packaged_watchlist)
+            )
         chosen_data_dir = data_dir or Path(os.getenv("NEWS_AGENT_DATA_DIR", "data"))
         if not chosen_data_dir.is_absolute():
             chosen_data_dir = root / chosen_data_dir
         env_ollama = os.getenv("NEWS_AGENT_USE_OLLAMA", "true").lower() in {"1", "true", "yes"}
+        sec_user_agent = os.getenv("SEC_USER_AGENT", "").strip()
+        placeholder_markers = ("example.com", "example.invalid", "your-email", "coursework@")
+        if selected_mode == "live" and (
+            not sec_user_agent
+            or any(marker in sec_user_agent.casefold() for marker in placeholder_markers)
+        ):
+            raise ValueError(
+                "Live mode requires SEC_USER_AGENT with an application name and real contact email"
+            )
+        if not sec_user_agent:
+            sec_user_agent = "FinancialNewsAgent/1.0 demo@example.invalid"
         return cls(
             project_root=root,
             mode=selected_mode,
@@ -49,9 +71,7 @@ class Settings:
             ollama_url=os.getenv("NEWS_AGENT_OLLAMA_URL", "http://localhost:11434").rstrip("/"),
             model=os.getenv("NEWS_AGENT_MODEL", "qwen2.5:7b"),
             use_ollama=env_ollama if use_ollama is None else use_ollama,
-            sec_user_agent=os.getenv(
-                "SEC_USER_AGENT", "FinancialNewsAgent/1.0 coursework@example.com"
-            ),
+            sec_user_agent=sec_user_agent,
         )
 
     def ensure_runtime_dirs(self) -> None:

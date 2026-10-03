@@ -118,6 +118,13 @@ class AlertMemory:
                 ),
             )
 
+    def get_alert(self, event_key: str) -> dict[str, Any] | None:
+        with self._session() as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM alerts WHERE event_key = ?", (event_key,)
+            ).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
     def list_alerts(self) -> list[dict[str, Any]]:
         with self._session() as connection:
             rows = connection.execute(
@@ -134,6 +141,33 @@ class JsonlNotificationSink:
 
     def send(self, alert: Alert) -> dict[str, Any]:
         with self._lock:
+            if self._contains_unlocked(alert.event_key):
+                return {
+                    "delivered": True,
+                    "channel": "jsonl",
+                    "path": str(self.path),
+                    "already_delivered": True,
+                }
             with self.path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(alert.to_dict(), ensure_ascii=False) + "\n")
-        return {"delivered": True, "channel": "jsonl", "path": str(self.path)}
+        return {
+            "delivered": True,
+            "channel": "jsonl",
+            "path": str(self.path),
+            "already_delivered": False,
+        }
+
+    def contains(self, event_key: str) -> bool:
+        with self._lock:
+            return self._contains_unlocked(event_key)
+
+    def _contains_unlocked(self, event_key: str) -> bool:
+        if not self.path.exists():
+            return False
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            try:
+                if json.loads(line).get("event_key") == event_key:
+                    return True
+            except json.JSONDecodeError:
+                continue
+        return False
