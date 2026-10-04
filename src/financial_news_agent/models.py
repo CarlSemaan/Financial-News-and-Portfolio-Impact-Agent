@@ -64,6 +64,8 @@ class SourceEvidence:
     injection_flag: bool = False
 
     def __post_init__(self) -> None:
+        if self.source_type not in {"news", "official"}:
+            raise ValueError("Evidence source type must be news or official")
         if not self.url.startswith(("http://", "https://")):
             raise ValueError("Evidence URL must use http or https")
 

@@ -11,7 +11,7 @@ from .memory import AlertMemory, JsonlNotificationSink
 from .models import Alert, CandidateEvent, Company, parse_datetime
 from .providers import FixtureProvider, LiveProvider
 from .safeguards import validate_output_text, validate_source_text
-from .scoring import EVENT_BASE_SCORES, stable_event_key
+from .scoring import EVENT_BASE_SCORES, confidence_for, score_candidate, stable_event_key
 
 
 class ToolService:
@@ -97,6 +97,26 @@ class ToolService:
         credible_sources = {item.source_name.casefold() for item in alert.sources if item.credible}
         if not (has_official or len(credible_sources) >= 2):
             raise ValueError("Alert lacks an official source or two credible independent sources")
+        expected_confidence = confidence_for(
+            verified=True,
+            evidence_count=len(alert.sources),
+            has_official=has_official,
+        )
+        if alert.confidence != expected_confidence:
+            raise ValueError("Alert confidence does not match its validated source evidence")
+        combined = " ".join(
+            [
+                alert.headline,
+                alert.facts,
+                *(item.title for item in alert.sources),
+                *(item.summary for item in alert.sources),
+            ]
+        ).casefold()
+        if not any(
+            term.casefold() in combined
+            for term in (company.ticker, company.name, *company.query_terms)
+        ):
+            raise ValueError("Alert content is not relevant to the approved company")
         validate_source_text(" ".join([alert.headline, alert.facts]))
         validate_output_text(" ".join([alert.impact, alert.uncertainty]))
         return alert
@@ -120,6 +140,9 @@ class ToolService:
         )
         if stable_event_key(candidate) != alert.event_key:
             raise ValueError("Alert event key does not match the validated event fields")
+        deterministic_score = score_candidate(candidate)
+        if alert.significance_score > deterministic_score:
+            raise ValueError("Alert significance score exceeds the deterministic evidence score")
         self.memory.save(alert, normalized_event_type)
         return {"saved": True, "event_key": alert.event_key}
 

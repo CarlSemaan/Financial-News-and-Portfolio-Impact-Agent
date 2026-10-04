@@ -314,6 +314,69 @@ class EndToEndTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "event key"):
                 service.save_alert(inconsistent_key, "earnings")
 
+            official_source = next(
+                item for item in payload["sources"] if item["source_type"] == "official"
+            )
+            unrelated_source = {
+                **official_source,
+                "evidence_id": "unrelated-official",
+                "title": "Unrelated Corp reports quarterly earnings",
+                "summary": "Unrelated Corp reports quarterly earnings.",
+                "event_group": "unrelated-event",
+            }
+            unrelated_candidate = CandidateEvent(
+                ticker=payload["ticker"],
+                company_name=payload["company_name"],
+                event_group="unrelated-event",
+                event_type="earnings",
+                headline=unrelated_source["title"],
+                event_date=AS_OF,
+                factual_summary=unrelated_source["summary"],
+                evidence=(SourceEvidence.from_dict(unrelated_source),),
+            )
+            unrelated = {
+                **payload,
+                "event_key": stable_event_key(unrelated_candidate),
+                "headline": unrelated_candidate.headline,
+                "event_date": AS_OF.isoformat(),
+                "facts": unrelated_candidate.factual_summary,
+                "confidence": "medium",
+                "sources": [unrelated_source],
+            }
+            with self.assertRaisesRegex(ValueError, "not relevant"):
+                service.save_alert(unrelated, "earnings")
+
+            inflated_source = {
+                **official_source,
+                "evidence_id": "aapl-routine-product",
+                "title": "Apple releases a routine product interface update",
+                "summary": "Apple releases a routine product interface update.",
+                "event_group": "aapl-routine-product",
+                "event_type": "product",
+            }
+            inflated_candidate = CandidateEvent(
+                ticker=payload["ticker"],
+                company_name=payload["company_name"],
+                event_group="aapl-routine-product",
+                event_type="product",
+                headline=inflated_source["title"],
+                event_date=AS_OF,
+                factual_summary=inflated_source["summary"],
+                evidence=(SourceEvidence.from_dict(inflated_source),),
+            )
+            inflated = {
+                **payload,
+                "event_key": stable_event_key(inflated_candidate),
+                "headline": inflated_candidate.headline,
+                "event_date": AS_OF.isoformat(),
+                "facts": inflated_candidate.factual_summary,
+                "confidence": "medium",
+                "significance_score": 99,
+                "sources": [inflated_source],
+            }
+            with self.assertRaisesRegex(ValueError, "deterministic evidence score"):
+                service.save_alert(inflated, "product")
+
             unsaved = {**payload, "event_key": "valid-but-not-saved"}
             with self.assertRaisesRegex(ValueError, "saved before notification"):
                 service.notify_alert(unsaved)
@@ -490,7 +553,12 @@ class ConfigurationTests(unittest.TestCase):
                     project_root=Path(temp_dir), mode="demo", use_ollama=False
                 )
             self.assertEqual("default_watchlist.json", settings.watchlist_path.name)
-            self.assertEqual(3, len(load_watchlist(settings.watchlist_path)))
+            packaged = load_watchlist(settings.watchlist_path)
+            self.assertEqual(3, len(packaged))
+            self.assertEqual(
+                load_watchlist(PROJECT_ROOT / "config" / "watchlist.json"),
+                packaged,
+            )
 
 
 if __name__ == "__main__":

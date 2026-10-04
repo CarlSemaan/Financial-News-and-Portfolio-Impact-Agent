@@ -112,6 +112,13 @@ $env:SEC_USER_AGENT = "FinancialNewsAgent/1.0 your-real-email@example.com"
 $env:NEWS_AGENT_MODEL = "qwen2.5:7b"
 ```
 
+Windows Command Prompt example:
+
+```bat
+set SEC_USER_AGENT=FinancialNewsAgent/1.0 your-real-email@example.com
+set NEWS_AGENT_MODEL=qwen2.5:7b
+```
+
 macOS or Linux example:
 
 ```bash
